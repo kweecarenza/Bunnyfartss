@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aesthetic Bunny Meadow</title>
+    <style>
+        :root {
+            --meadow-light: #F9FBE7;
+            --clover-vibrant: #76FF03;
+            --clover-dark: #33691E;
+            --carrot-orange: #FF9800;
+            --sparkle-gold: #FFEB3B;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #fefefe;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            touch-action: none;
+        }
+
+        /* Responsive Container */
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            max-width: 450px;
+            max-height: 850px;
+            background: linear-gradient(to bottom, #FFFFFF, #E1F5FE, #DCEDC8);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+            overflow: hidden;
+            border: 8px solid white;
+            border-radius: 40px;
+            margin: auto;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui {
+            position: absolute;
+            top: 5%;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #score {
+            font-size: clamp(32px, 8vw, 48px);
+            color: #5D4037;
+            text-shadow: 2px 2px 0px white;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.7);
+            display: inline-block;
+            padding: 5px 25px;
+            border-radius: 30px;
+        }
+
+        #start-screen, #game-over, #win-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(10px);
+            z-index: 20;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .btn {
+            background: white;
+            border: 3px solid #DCE775;
+            padding: 15px 35px;
+            font-size: 22px;
+            color: #5D4037;
+            border-radius: 35px;
+            cursor: pointer;
+            margin-top: 25px;
+            font-weight: bold;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: auto;
+            box-shadow: 0 6px 0 #C5E1A5;
+            user-select: none;
+        }
+
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 #C5E1A5;
+        }
+
+        h1 {
+            color: #5D4037;
+            margin: 0;
+            font-size: clamp(28px, 6vw, 40px);
+        }
+
+        p {
+            color: #8D6E63;
+            font-size: clamp(14px, 4vw, 18px);
+            margin-top: 10px;
+        }
+
+        @media (max-width: 480px) {
+            #game-container {
+                border-radius: 0;
+                border: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="ui">
+            <div id="score">0</div>
+        </div>
+
+        <div id="start-screen">
+            <h1 style="font-size: 60px;">🍀</h1>
+            <h1>Lucky Meadow</h1>
+            <p>Reach the Magic Toilet! (Goal: 25)</p>
+            <div class="btn" onclick="startGame()">START JOURNEY</div>
+        </div>
+
+        <div id="game-over" style="display: none;">
+            <h1 style="font-size: 60px;">💨</h1>
+            <h1>Oh no!</h1>
+            <p id="final-score">Score: 0</p>
+            <div class="btn" onclick="startGame()">TRY AGAIN</div>
+        </div>
+
+        <div id="win-screen" style="display: none;">
+            <h1 style="font-size: 60px;">🚽✨</h1>
+            <h1>Victory!</h1>
+            <p>Bunny is finally happy!</p>
+            <div class="btn" onclick="startGame()">PLAY AGAIN</div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over');
+        const winScreen = document.getElementById('win-screen');
+        const finalScoreText = document.getElementById('final-score');
+
+        let GAME_WIDTH, GAME_HEIGHT;
+        const GRAVITY = 0.22;
+        const JUMP = -5.8;
+        const PIPE_WIDTH = 80;
+        const PIPE_GAP = 220;
+        let PIPE_SPEED = 2.4;
+        const WIN_SCORE = 25;
+
+        let gameRunning = false;
+        let score = 0;
+        let frame = 0;
+        let bunny = { x: 70, y: 0, w: 50, h: 50, velocity: 0, rotation: 0 };
+        let pipes = [];
+        let clovers = []; 
+        let carrots = []; 
+        let sparkles = []; 
+        let toilet = null;
+
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playCuteSound() {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            // "Pop" sound
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.05);
+            
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playWinSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            [440, 554, 659, 880].forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + i * 0.1);
+                gain.gain.setValueAtTime(0.1, now + i * 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.1 + 0.3);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + i * 0.1);
+                osc.stop(now + i * 0.1 + 0.3);
+            });
+        }
+
+        function resize() {
+            const container = document.getElementById('game-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            GAME_WIDTH = canvas.width;
+            GAME_HEIGHT = canvas.height;
+            
+            // Adjust bunny position on resize
+            bunny.x = GAME_WIDTH * 0.2;
+            if (!gameRunning) bunny.y = GAME_HEIGHT / 2;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        function handleInput(e) {
+            if (!gameRunning) return;
+            e.preventDefault();
+            bunny.velocity = JUMP;
+            playCuteSound();
+            spawnCarrotEffect();
+        }
+
+        // Event listeners for both touch and mouse
+        window.addEventListener('mousedown', handleInput);
+        window.addEventListener('touchstart', handleInput, { passive: false });
+
+        function spawnCarrotEffect() {
+            carrots.push({
+                x: bunny.x + 5,
+                y: bunny.y + 35,
+                vx: -4 - Math.random() * 2,
+                vy: 2 + Math.random() * 2,
+                rotation: Math.random() * Math.PI * 2,
+                life: 1.0
+            });
+            for(let i=0; i<8; i++) {
+                sparkles.push({
+                    x: bunny.x + 5,
+                    y: bunny.y + 35,
+                    vx: -2 - Math.random() * 5,
+                    vy: (Math.random() - 0.5) * 6,
+                    size: 3 + Math.random() * 5,
+                    life: 1.0,
+                    color: Math.random() > 0.5 ? '#FFF59D' : '#FFEB3B'
+                });
+            }
+        }
+
+        function createClover() {
+            return {
+                x: Math.random() * GAME_WIDTH,
+                y: Math.random() * GAME_HEIGHT,
+                size: 25 + Math.random() * 35,
+                color: '#76FF03',
+                speed: 0.3 + Math.random() * 0.3,
+                rotation: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random() - 0.5) * 0.015
+            };
+        }
+
+        // Initialize background elements
+        for(let i=0; i<15; i++) clovers.push(createClover());
+
+        function drawFourLeafClover(x, y, size, color, alpha = 1) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.globalAlpha = alpha;
+            
+            // Stem
+            ctx.strokeStyle = '#33691E';
+            ctx.lineWidth = size/10;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.quadraticCurveTo(size/4, size/2, 0, size);
+            ctx.stroke();
+
+            // 4 Leaves
+            ctx.fillStyle = color;
+            for(let i=0; i<4; i++) {
+                ctx.save();
+                ctx.rotate((i * Math.PI) / 2);
+                ctx.beginPath();
+                ctx.ellipse(-size/4.5, -size/2.5, size/3.2, size/2.2, 0, 0, Math.PI * 2);
+                ctx.ellipse(size/4.5, -size/2.5, size/3.2, size/2.2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Inner highlight
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.beginPath();
+                ctx.ellipse(0, -size/2.5, size/6, size/4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
+        function drawBunny() {
+            ctx.save();
+            ctx.translate(bunny.x + bunny.w/2, bunny.y + bunny.h/2);
+            bunny.rotation = Math.min(Math.PI/8, Math.max(-Math.PI/8, bunny.velocity * 0.06));
+            ctx.rotate(bunny.rotation);
+
+            // Back Thighs
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.ellipse(-15, 12, 12, 8, 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(15, 12, 12, 8, -0.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main Body
+            ctx.beginPath();
+            ctx.roundRect(-24, -15, 48, 40, 20);
+            ctx.fill();
+
+            // Head
+            ctx.beginPath();
+            ctx.roundRect(-20, -32, 40, 32, 18);
+            ctx.fill();
+
+            // Ears
+            ctx.beginPath();
+            ctx.ellipse(-11, -38, 9, 16, -0.1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(11, -38, 9, 16, 0.1, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Inner Ears (Pink)
+            ctx.fillStyle = '#FFEBEE';
+            ctx.beginPath();
+            ctx.ellipse(-11, -38, 5, 11, -0.1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(11, -38, 5, 11, 0.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Face
+            ctx.fillStyle = '#5D4037';
+            ctx.beginPath(); ctx.arc(-8, -18, 2.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(8, -18, 2.5, 0, Math.PI * 2); ctx.fill();
+
+            // Muzzle
+            ctx.fillStyle = '#FDFDFD';
+            ctx.beginPath(); ctx.ellipse(0, -12, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#5D4037';
+            ctx.beginPath(); ctx.ellipse(0, -13, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
+
+            // Blush
+            ctx.fillStyle = 'rgba(255, 182, 193, 0.6)';
+            ctx.beginPath(); ctx.arc(-14, -13, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(14, -13, 5, 0, Math.PI * 2); ctx.fill();
+
+            // Red Button
+            ctx.fillStyle = '#EF5350';
+            ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawCarrot(c) {
+            ctx.save();
+            ctx.translate(c.x, c.y);
+            ctx.rotate(c.rotation);
+            ctx.globalAlpha = c.life;
+            ctx.fillStyle = '#FFA726';
+            ctx.beginPath();
+            ctx.moveTo(0, 0); ctx.lineTo(22, 8); ctx.lineTo(0, 16); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#66BB6A';
+            ctx.fillRect(-6, 5, 8, 8);
+            ctx.restore();
+        }
+
+        function drawSparkle(s) {
+            ctx.save();
+            ctx.globalAlpha = s.life;
+            ctx.fillStyle = s.color;
+            ctx.translate(s.x, s.y);
+            for(let i=0; i<4; i++) {
+                ctx.rotate(Math.PI/2);
+                ctx.fillRect(-s.size, -s.size/5, s.size*2, s.size/2.5);
+            }
+            ctx.restore();
+        }
+
+        function drawObstacle(p) {
+            const woodColor = '#EFEBE9';
+            ctx.fillStyle = woodColor;
+            ctx.fillRect(p.x, 0, PIPE_WIDTH, p.top);
+            ctx.fillRect(p.x, p.top + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT);
+            drawFourLeafClover(p.x + PIPE_WIDTH/2, p.top - 35, 28, '#76FF03');
+            drawFourLeafClover(p.x + PIPE_WIDTH/2, p.top + PIPE_GAP + 35, 28, '#76FF03');
+        }
+
+        function drawToilet(t) {
+            ctx.save();
+            ctx.translate(t.x, t.y);
+            
+            // Base
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.roundRect(0, 50, 80, 50, 10);
+            ctx.fill();
+            // Bowl
+            ctx.beginPath();
+            ctx.ellipse(40, 50, 45, 20, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#E1F5FE';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            // Tank
+            ctx.fillRect(50, 0, 30, 60);
+            // Flush handle
+            ctx.fillStyle = '#B0BEC5';
+            ctx.fillRect(55, 10, 8, 4);
+
+            // Aura Sparkles
+            ctx.fillStyle = 'rgba(255, 235, 59, 0.4)';
+            for(let i=0; i<3; i++) {
+                ctx.beginPath();
+                ctx.arc(40 + Math.sin(frame/10 + i)*30, 30 + Math.cos(frame/10 + i)*20, 5, 0, Math.PI*2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            frame++;
+            bunny.velocity += GRAVITY;
+            bunny.y += bunny.velocity;
+
+            // Collision with floor/ceiling
+            if (bunny.y + bunny.h > GAME_HEIGHT || bunny.y < -bunny.h) endGame();
+
+            // Spawn logic
+            if (score < WIN_SCORE) {
+                if (frame % 90 === 0) {
+                    let topH = Math.random() * (GAME_HEIGHT - PIPE_GAP - 250) + 100;
+                    pipes.push({ x: GAME_WIDTH, top: topH, passed: false });
+                }
+            } else if (!toilet && pipes.length === 0) {
+                toilet = { x: GAME_WIDTH, y: GAME_HEIGHT/2 - 50 };
+            }
+
+            // Pipe updates
+            pipes.forEach(p => {
+                p.x -= PIPE_SPEED;
+                // Hitbox detection
+                if (bunny.x + 40 > p.x && bunny.x + 10 < p.x + PIPE_WIDTH && 
+                   (bunny.y + 5 < p.top || bunny.y + 45 > p.top + PIPE_GAP)) {
+                    endGame();
+                }
+                if (!p.passed && p.x + PIPE_WIDTH < bunny.x) {
+                    p.passed = true; score++; scoreElement.innerText = score;
+                }
+            });
+            pipes = pipes.filter(p => p.x > -PIPE_WIDTH);
+
+            // Toilet update
+            if (toilet) {
+                toilet.x -= PIPE_SPEED * 0.8;
+                if (bunny.x + bunny.w > toilet.x + 20 && bunny.x < toilet.x + 60 &&
+                    bunny.y + bunny.h > toilet.y && bunny.y < toilet.y + 100) {
+                    winGame();
+                }
+                if (toilet.x < -100) toilet = null;
+            }
+
+            // Visual effects updates
+            carrots.forEach(c => { c.x += c.vx; c.y += c.vy; c.life -= 0.015; });
+            carrots = carrots.filter(c => c.life > 0);
+            sparkles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life -= 0.018; });
+            sparkles = sparkles.filter(s => s.life > 0);
+            clovers.forEach(c => {
+                c.x -= PIPE_SPEED * 0.4; c.rotation += c.rotSpeed;
+                if (c.x < -100) { c.x = GAME_WIDTH + 100; c.y = Math.random() * GAME_HEIGHT; }
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            const grad = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+            grad.addColorStop(0, '#FFFFFF');
+            grad.addColorStop(0.5, '#E1F5FE');
+            grad.addColorStop(1, '#DCEDC8');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            clovers.forEach(c => {
+                ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rotation);
+                drawFourLeafClover(0, 0, c.size, '#76FF03', 0.4); ctx.restore();
+            });
+
+            sparkles.forEach(drawSparkle);
+            carrots.forEach(drawCarrot);
+            pipes.forEach(drawObstacle);
+            if (toilet) drawToilet(toilet);
+            drawBunny();
+
+            requestAnimationFrame(() => {
+                update(); draw();
+            });
+        }
+
+        function startGame() {
+            initAudio();
+            score = 0; scoreElement.innerText = '0';
+            bunny.y = GAME_HEIGHT / 2; bunny.velocity = 0;
+            pipes = []; carrots = []; sparkles = []; toilet = null;
+            gameRunning = true;
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            winScreen.style.display = 'none';
+        }
+
+        function endGame() {
+            if (!gameRunning) return;
+            gameRunning = false;
+            finalScoreText.innerText = "Final Score: " + score;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        function winGame() {
+            if (!gameRunning) return;
+            gameRunning = false;
+            playWinSound();
+            winScreen.style.display = 'flex';
+        }
+
+        // Start drawing immediately
+        draw();
+    </script>
+</body>
+</html>
